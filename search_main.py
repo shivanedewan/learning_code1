@@ -500,27 +500,8 @@ async def stream_or_paginate_search(
         size = 100  # Fallback safe default
 
     if stream:
-        # Full streaming mode
-        async def document_generator() -> AsyncGenerator[str, None]:
-            nonlocal search_after
-            first = True
-            yield "["
-            while True:
-                hits, search_after = await search_elasticsearch(
-                    queries, size, search_type, search_after, filters, date_range, parents_only
-                )
-                if not hits:
-                    break
-                for hit in hits:
-                    doc_json = hit["_source"]
-                    doc_str = f"{'' if first else ','}{json.dumps(doc_json)}"
-                    yield doc_str
-                    first = False
-                if search_after is None:
-                    break
-            yield "]"
-
-        return StreamingResponse(document_generator(), media_type="application/json")
+        #  by default it is paginated i dont want stream
+        pass
 
     else:
         # Paginated mode

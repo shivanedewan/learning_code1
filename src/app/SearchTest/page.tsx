@@ -52,6 +52,10 @@ const DocumentList = () => {
   // ★ NEW: parent-docs-only toggle
   const [parentsOnly, setParentsOnly] = useState<boolean>(false);
 
+  // *** NEW: State for filters from the Simple Search Dialog ***
+  const [simpleSearchFilters, setSimpleSearchFilters] = useState<Record<string, string>>({});
+
+
   // Filter State
   const [yearFilter, setYearFilter] = useState<string>(""); // Use string to easily match select value
 
@@ -106,6 +110,9 @@ const DocumentList = () => {
   const handleHeaderSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    // *** NEW: Clear simple search filters when a new text search is submitted ***
+    setSimpleSearchFilters({});
+
     if (!headerSearchQuery.trim()) {
       router.push(`/SearchTest`);
       return;
@@ -131,6 +138,15 @@ const DocumentList = () => {
     router.push(`/SearchTest?${params.toString()}`);
   };
 
+  // *** NEW: Handler for the Simple Search submission ***
+  const handleSimpleSearchSubmit = (filters: Record<string, string>) => {
+    // When a simple search is applied, we clear the main query bar
+    // and push an empty query to the URL, letting the filters drive the search.
+    setHeaderSearchQuery('');
+    setSimpleSearchFilters(filters);
+    router.push(`/SearchTest`); // Navigate to a clean URL, useEffect will pick up the filter change
+  };
+
 
   //data adaptation helper function
   const adaptDocs=(docs: Document[]): Document[]=>{
@@ -138,10 +154,6 @@ const DocumentList = () => {
         console.error("adaptdocs functione error", docs);
         return [];  // empty array if input not valid
       }
-
-  
-
-
 
       return docs.map((Doc)=>{
 
@@ -167,7 +179,14 @@ const DocumentList = () => {
 
 
   const fetchDocuments = useCallback(async (isLoadMore = false,attachmentQuery?: {ProphecyId: string,ParentProphecyId: string, isAttachment: boolean}) => {
-    // ... (previous checks for searchQuery remain the same) ...
+    // *** MODIFIED: Check if there are any search criteria ***
+    if (parsedApiQueries.length === 0 && Object.keys(simpleSearchFilters).length === 0) {
+      // No regular query and no simple filters, so don't fetch.
+      // You might want to clear documents or show a message.
+      setDocuments([]);
+      setError("Please enter a search query or apply filters to begin.");
+      return;
+    }
 
     if ((fromDate && !toDate) || (!fromDate && toDate)) {
         setError("Please provide a complete date range (both start and end dates).");
@@ -201,6 +220,14 @@ const DocumentList = () => {
     const activeExtensionTypes = Array.from(selectedExtensionTypeValues); // Convert Set to Array
     if (activeExtensionTypes.length > 0) {
         activeFilters[ES_EXTENSION_FIELD] = activeExtensionTypes;
+    }
+
+    // *** NEW: Merge filters from the Simple Search Dialog ***
+    for (const field in simpleSearchFilters) {
+      if (Object.prototype.hasOwnProperty.call(simpleSearchFilters, field)) {
+        // The backend expects an array of values for each filter key
+        activeFilters[field] = [simpleSearchFilters[field]];
+      }
     }
    
 
@@ -258,7 +285,7 @@ const DocumentList = () => {
 
     // --- Fetch ---
     try {
-      console.log(body1)
+      console.log("Constructed Payload:", body1) // Log the payload for debugging
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
         headers: {
@@ -330,8 +357,11 @@ const DocumentList = () => {
       setLoading(false);
     }
   }, [
-      // ... (dependencies remain the same) ...
-      parsedApiQueries, searchAfter, yearFilter, selectedDocTypeValues, selectedBranchTypeValues,selectedExtensionTypeValues, searchType, fromDate, toDate,documents,adaptDocs, view, gridPageSize, parentsOnly
+      // *** MODIFIED: Added simpleSearchFilters to dependencies ***
+      parsedApiQueries, searchAfter, yearFilter, selectedDocTypeValues, 
+      selectedBranchTypeValues, selectedExtensionTypeValues, searchType, 
+      fromDate, toDate, documents, adaptDocs, view, gridPageSize, parentsOnly,
+      simpleSearchFilters
     ]
   );
 
@@ -370,30 +400,28 @@ const DocumentList = () => {
 
     if (docIdFromUrl) return; // Don't run if we are in attachment/parent view
 
-    
-    // Reset pagination and fetch first page when query or filters change
-    if(parsedApiQueries.length > 0){
-    setDocuments([]);
-    setSearchAfter(null);
-    fetchDocuments(false); // false indicates it's not a "Load More" action
-
+    // *** MODIFIED: Logic to decide when to fetch ***
+    // Fetch if we have URL query, or if we have simple filters.
+    if (parsedApiQueries.length > 0 || Object.keys(simpleSearchFilters).length > 0) {
+      setDocuments([]);
+      setSearchAfter(null);
+      fetchDocuments(false); // false indicates it's not a "Load More" action
     }
+    // This case handles when a query like "[]" is in the URL, but there are no simple filters.
     else if (rawQueryFromUrl && parsedApiQueries.length === 0) {
-        // This case means rawQueryFromUrl was present but resulted in no valid queries (e.g. "[]" or malformed)
-        setDocuments([]);
-        setSearchAfter(null);
-        setError("Invalid or empty search query provided. Please use double quotes for phrases.");
-        
+      setDocuments([]);
+      setSearchAfter(null);
+      setError("Invalid or empty search query provided.");
     }
+    // This case handles a fresh page load with no query in the URL and no simple filters yet.
     else if (!rawQueryFromUrl) {
-        // No query was provided in the URL at all (e.g. direct navigation to /SearchResults).
-        setDocuments([]);
-        setSearchAfter(null);
-        setError(null); // Or "Please enter a search query."
-     
+      setDocuments([]);
+      setSearchAfter(null);
+      setError(null);
     }
   }, [
-      parsedApiQueries, // Re-fetch if query in URL changes
+      // *** MODIFIED: Added simpleSearchFilters to dependencies ***
+      parsedApiQueries, 
       yearFilter,
       rawQueryFromUrl,
       selectedDocTypeValues,
@@ -405,7 +433,8 @@ const DocumentList = () => {
       docIdFromUrl,
       gridPageSize,
       view,
-      parentsOnly
+      parentsOnly,
+      simpleSearchFilters
   ]);
 
 
@@ -464,7 +493,7 @@ const handleExtensionTypeChange = useCallback((extensionTypeValue: string) => {
     setSelectedDocTypeValues(new Set());
     setSelectedBranchTypeValues(new Set());
     setParentsOnly(false);
-    // setSearchQueries([]); // Decide if you want to clear search terms too
+    setSimpleSearchFilters({}); // *** NEW: Clear simple search filters as well ***
     // You might also want to trigger a new search with cleared filters here
     // or reset pagination, etc.
     console.log("All filters cleared!");
@@ -474,10 +503,12 @@ const handleExtensionTypeChange = useCallback((extensionTypeValue: string) => {
   // --- Render ---
   return (
     <div className="bg-white text-black">
+      {/* *** MODIFIED: Pass the new handler to the Header *** */}
       <Header 
         searchQuery={headerSearchQuery}
         onSearchQueryChange={setHeaderSearchQuery}
         onSearchSubmit={handleHeaderSearchSubmit}
+        onSimpleSearchSubmit={handleSimpleSearchSubmit}
       />
       <div className="flex h-[calc(100vh-4rem)]">
         {view === 'reader' && (

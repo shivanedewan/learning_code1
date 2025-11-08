@@ -1,5 +1,5 @@
 // --- Configuration ---
-export const API_BASE_URL = "http://192.168.10.138:8000"; // ADJUST TO YOUR BACKEND URL (FastAPI default is 8000)
+export const API_BASE_URL = "http://localhost:8000"; // ADJUST TO YOUR BACKEND URL (FastAPI default is 8000)
 export const PAGE_SIZE = 10; // How many documents to fetch per page
 
 // --- Filter Mappings (Adjust values and ES field names as needed) ---
