@@ -49,12 +49,12 @@ logger = logging.getLogger(__name__)
 
 
 # Elasticsearch configuration
-ES_HOST = "http://192.168.10.141:9200/"
-ES_INDEX = "document"
+ES_HOST = "http://localhost:9200/"
+ES_INDEX = "document_index"
 
 
 
-idx_url="http://192.168.10.141:9200/document"
+idx_url="http://localhost:9200/document_index"
 
 def to_epoch_millis(date_str):
     dt_naive=datetime.strptime(date_str,"%Y-%m-%d")
@@ -206,8 +206,11 @@ async def search_elasticsearch(
     """
     Performs a search against Elasticsearch with pagination using search_after.
     """
-    if not queries:
-        raise HTTPException(status_code=400, detail="Query list cannot be empty")
+
+
+
+    # if not queries:
+    #     raise HTTPException(status_code=400, detail="Query list cannot be empty")
 
     must_clauses = []
     should_clauses = []
@@ -235,7 +238,8 @@ async def search_elasticsearch(
 
             should_clauses.append({"bool": {"should": sub_clauses,"minimum_should_match":1}})
     else:
-        raise HTTPException(status_code=400, detail="Invalid search_type. Use 'any' or 'all'.")
+        if queries:
+            raise HTTPException(status_code=400, detail="Invalid search_type. Use 'any' or 'all'.")
 
     # Filter clauses
     if filters:
@@ -493,15 +497,50 @@ async def stream_or_paginate_search(
     stream = payload.get("stream", False)       # Optional, default False
     parents_only = bool(payload.get("parents_only",False))
 
-    if not queries or not isinstance(queries, list):
-        raise HTTPException(status_code=400, detail="Missing or invalid 'queries' list.")
+
+
+    # *** NEW ***: Add a validation check to prevent completely empty searches.
+    # An empty search (no queries, no filters, no date range) would be a very
+    # expensive "match_all" query. Instead of erroring, we return a valid but
+    # empty response, which is cleaner for the frontend.
+    if not queries and not filters and not date_range:
+        return JSONResponse(content={
+            "documents": [],
+            "next_search_after": None,
+            "aggregations": {
+                "doctype_counts": {},
+                "branchtype_counts": {},
+                "extensiontype_counts": {}
+            },
+            "total": 0
+        })
+    
     
     if not isinstance(size, int) or size <= 0:
         size = 100  # Fallback safe default
 
     if stream:
-        #  by default it is paginated i dont want stream
-        pass
+        # Full streaming mode
+        async def document_generator() -> AsyncGenerator[str, None]:
+            nonlocal search_after
+            first = True
+            yield "["
+            while True:
+                hits, search_after = await search_elasticsearch(
+                    queries, size, search_type, search_after, filters, date_range, parents_only
+                )
+                if not hits:
+                    break
+                for hit in hits:
+                    doc_json = hit["_source"]
+                    doc_str = f"{'' if first else ','}{json.dumps(doc_json)}"
+                    yield doc_str
+                    first = False
+                if search_after is None:
+                    break
+            yield "]"
+
+        return StreamingResponse(document_generator(), media_type="application/json")
 
     else:
         # Paginated mode

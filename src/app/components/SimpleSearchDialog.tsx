@@ -5,7 +5,10 @@ import { FaPlus, FaTrash, FaTimes } from "react-icons/fa";
 
 interface SimpleSearchDialogProps {
   onClose: () => void;
-  onSubmit: (filters: Record<string, string>) => void;
+  // *** MODIFIED: onSubmit now returns an object with filters AND the updated query ***
+  onSubmit: (data: { filters: Record<string, string>; query: string }) => void;
+  // *** NEW: Receive the initial query from the header search bar ***
+  initialQuery: string;
 }
 
 const documentFields: (keyof Document)[] = [
@@ -23,10 +26,13 @@ const documentFields: (keyof Document)[] = [
 const SimpleSearchDialog: React.FC<SimpleSearchDialogProps> = ({
   onClose,
   onSubmit,
+  initialQuery,
 }) => {
   const [filters, setFilters] = useState<{ field: string; value: string }[]>([
     { field: "", value: "" },
   ]);
+  // *** NEW: State to manage the query string inside the dialog ***
+  const [query, setQuery] = useState(initialQuery);
 
   const handleFieldChange = (index: number, newField: string) => {
     const updated = [...filters];
@@ -55,7 +61,9 @@ const SimpleSearchDialog: React.FC<SimpleSearchDialogProps> = ({
     );
     const result: Record<string, string> = {};
     nonEmptyFilters.forEach((f) => (result[f.field] = f.value));
-    onSubmit(result);
+    
+    // *** MODIFIED: Submit both the filters and the current query value ***
+    onSubmit({ filters: result, query });
   };
 
   return (
@@ -83,7 +91,7 @@ const SimpleSearchDialog: React.FC<SimpleSearchDialogProps> = ({
       >
         {/* Header */}
         <div className="flex justify-between items-center border-b border-gray-700 px-6 py-4 bg-gray-800">
-          <h2 className="text-lg font-semibold">🔍 Build Your Simple Search</h2>
+          <h2 className="text-lg font-semibold">🔍 Refine Your Search</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition"
@@ -94,6 +102,25 @@ const SimpleSearchDialog: React.FC<SimpleSearchDialogProps> = ({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {/* *** NEW: Keywords input field *** */}
+          <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
+            <label htmlFor="keywords-input" className="block text-sm font-medium text-gray-300 mb-2">Keywords</label>
+            <input
+              id="keywords-input"
+              type="text"
+              value={query}
+              placeholder='e.g., "machine learning"'
+              onChange={(e) => setQuery(e.target.value)}
+              className="
+                bg-gray-900 text-white 
+                border border-gray-600 
+                p-2 rounded-md w-full
+                placeholder-gray-400
+                focus:ring-2 focus:ring-blue-500 focus:outline-none
+              "
+            />
+          </div>
+
           {filters.map((filter, index) => (
             <div
               key={index}

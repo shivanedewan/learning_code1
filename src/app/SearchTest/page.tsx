@@ -107,28 +107,30 @@ const DocumentList = () => {
     setHeaderSearchQuery(formattedQuery);
   }, [parsedApiQueries]);
 
-  const handleHeaderSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
 
-    // *** NEW: Clear simple search filters when a new text search is submitted ***
-    setSimpleSearchFilters({});
 
-    if (!headerSearchQuery.trim()) {
+
+   // *** NEW: Reusable helper function to update the URL search parameter ***
+  const updateUrlWithQuery = (query: string) => {
+    if (!query.trim()) {
+      // If the query is empty, navigate to the base search page
       router.push(`/SearchTest`);
       return;
     }
 
-    const phraseMatches = headerSearchQuery.matchAll(/"([^"]*)"/g);
+    const phraseMatches = query.matchAll(/"([^"]*)"/g);
     let extractedPhrases = Array.from(phraseMatches, match => match[1])
                                  .filter(phrase => phrase.trim() !== "");
 
-    if (extractedPhrases.length === 0 && headerSearchQuery.trim() !== "") {
-        extractedPhrases = [headerSearchQuery.trim()];
+    // If no quoted phrases are found, treat the whole string as one term
+    if (extractedPhrases.length === 0 && query.trim() !== "") {
+        extractedPhrases = [query.trim()];
     }
 
     if (extractedPhrases.length === 0) {
-         alert('Please enter search terms enclosed in double quotes, e.g., "term one" "term two".');
-         return;
+      // This case handles a query that was just empty quotes, e.g., ""
+      router.push(`/SearchTest`);
+      return;
     }
 
     const params = new URLSearchParams({
@@ -136,16 +138,39 @@ const DocumentList = () => {
         type: searchType,
     });
     router.push(`/SearchTest?${params.toString()}`);
+  }
+
+ const handleHeaderSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    // When doing a new header search, we should clear the simple filters
+    setSimpleSearchFilters({});
+    
+    // This logic is now shared, so we'll call a helper
+    updateUrlWithQuery(headerSearchQuery);
   };
 
-  // *** NEW: Handler for the Simple Search submission ***
-  const handleSimpleSearchSubmit = (filters: Record<string, string>) => {
-    // When a simple search is applied, we clear the main query bar
-    // and push an empty query to the URL, letting the filters drive the search.
-    setHeaderSearchQuery('');
-    setSimpleSearchFilters(filters);
-    router.push(`/SearchTest`); // Navigate to a clean URL, useEffect will pick up the filter change
+  // // *** NEW: Handler for the Simple Search submission ***
+  // const handleSimpleSearchSubmit = (filters: Record<string, string>) => {
+  //   // When a simple search is applied, we clear the main query bar
+  //   // and push an empty query to the URL, letting the filters drive the search.
+  //   setHeaderSearchQuery('');
+  //   setSimpleSearchFilters(filters);
+  //   router.push(`/SearchTest`); // Navigate to a clean URL, useEffect will pick up the filter change
+  // };
+
+
+    // *** MODIFIED: This handler now updates both the query URL and the filter state ***
+  const handleSimpleSearchSubmit = (data: { filters: Record<string, string>, query: string }) => {
+    // 1. Set the simple filters from the dialog into state
+    setSimpleSearchFilters(data.filters);
+    
+    // 2. Update the header bar text with the (potentially modified) query from the dialog
+    setHeaderSearchQuery(data.query);
+
+    // 3. Update the URL with the new query. This will trigger the main useEffect hook.
+    updateUrlWithQuery(data.query);
   };
+
 
 
   //data adaptation helper function

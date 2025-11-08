@@ -6,11 +6,12 @@ interface HeaderProps {
   searchQuery: string;
   onSearchQueryChange: (query: string) => void;
   onSearchSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onSimpleSearchSubmit: (filters: Record<string, string>) => void; // *** NEW ***
+  // *** MODIFIED: The handler now expects the object with filters and query ***
+  onSimpleSearchSubmit: (data: { filters: Record<string, string>; query: string }) => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ searchQuery, onSearchQueryChange, onSearchSubmit, onSimpleSearchSubmit }) => {
-  const [isDialogOpen, setIsDialogOpen] = useState(false); // *** NEW ***
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   return (
     <header className="bg-gray-800 text-white p-4 flex justify-between items-center shadow-md">
@@ -31,7 +32,7 @@ const Header: React.FC<HeaderProps> = ({ searchQuery, onSearchQueryChange, onSea
 
       <div className="flex items-center space-x-4">
         <button className="p-2 rounded-full hover:bg-gray-700" onClick={() => setIsDialogOpen(true)}>
-          <FaFilter /> {/* *** NEW *** */}
+          <FaFilter />
         </button>
         <button className="p-2 rounded-full hover:bg-gray-700">
           <FaCog />
@@ -41,13 +42,15 @@ const Header: React.FC<HeaderProps> = ({ searchQuery, onSearchQueryChange, onSea
         </button>
       </div>
 
-      {/* *** NEW: Simple Search Dialog *** */}
       {isDialogOpen && (
         <SimpleSearchDialog
+          // *** NEW: Pass the current search query to the dialog ***
+          initialQuery={searchQuery}
           onClose={() => setIsDialogOpen(false)}
-          onSubmit={(filters) => {
+          // *** MODIFIED: The data object is passed directly to the page's handler ***
+          onSubmit={(data) => {
             setIsDialogOpen(false);
-            onSimpleSearchSubmit(filters);
+            onSimpleSearchSubmit(data);
           }}
         />
       )}
@@ -56,7 +59,6 @@ const Header: React.FC<HeaderProps> = ({ searchQuery, onSearchQueryChange, onSea
 };
 
 export default Header;
-
 
 
 // i added a filter in header and named it simple search... it take the fields and lets users put values to the field and then 
