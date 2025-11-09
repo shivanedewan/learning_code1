@@ -1,13 +1,11 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react"; // *** MODIFIED: Imported useEffect and useCallback ***
 import { Document } from "../types";
 import { FaPlus, FaTrash, FaTimes } from "react-icons/fa";
 
 interface SimpleSearchDialogProps {
   onClose: () => void;
-  // *** MODIFIED: onSubmit now returns an object with filters AND the updated query ***
   onSubmit: (data: { filters: Record<string, string>; query: string }) => void;
-  // *** NEW: Receive the initial query from the header search bar ***
   initialQuery: string;
 }
 
@@ -31,7 +29,6 @@ const SimpleSearchDialog: React.FC<SimpleSearchDialogProps> = ({
   const [filters, setFilters] = useState<{ field: string; value: string }[]>([
     { field: "", value: "" },
   ]);
-  // *** NEW: State to manage the query string inside the dialog ***
   const [query, setQuery] = useState(initialQuery);
 
   const handleFieldChange = (index: number, newField: string) => {
@@ -55,16 +52,43 @@ const SimpleSearchDialog: React.FC<SimpleSearchDialogProps> = ({
     setFilters(updated);
   };
 
-  const handleSubmit = () => {
+  // *** NEW: Wrap handleSubmit in useCallback for stability ***
+  // This memoizes the function so it doesn't get recreated on every render,
+  // making it safe to use in the useEffect dependency array.
+  const handleSubmit = useCallback(() => {
     const nonEmptyFilters = filters.filter(
       (f) => f.field && f.value.trim() !== ""
     );
     const result: Record<string, string> = {};
     nonEmptyFilters.forEach((f) => (result[f.field] = f.value));
     
-    // *** MODIFIED: Submit both the filters and the current query value ***
     onSubmit({ filters: result, query });
-  };
+  }, [filters, query, onSubmit]); // Dependencies for useCallback
+
+  // *** NEW: Add useEffect to handle keyboard events ***
+  useEffect(() => {
+    // Define the event handler function
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Close the dialog if the 'Escape' key is pressed
+      if (event.key === 'Escape') {
+        onClose();
+      }
+      
+      // Submit the form if the 'Enter' key is pressed
+      if (event.key === 'Enter') {
+        handleSubmit();
+      }
+    };
+
+    // Add the event listener to the window when the component mounts
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Return a cleanup function to remove the event listener when the component unmounts
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose, handleSubmit]); // Dependencies: The effect will re-run if these functions change
+
 
   return (
     <div
@@ -100,9 +124,9 @@ const SimpleSearchDialog: React.FC<SimpleSearchDialogProps> = ({
           </button>
         </div>
 
-        {/* Body */}
+        {/* Body (No changes needed here) */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {/* *** NEW: Keywords input field *** */}
+          {/* Keywords input field */}
           <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
             <label htmlFor="keywords-input" className="block text-sm font-medium text-gray-300 mb-2">Keywords</label>
             <input
@@ -181,7 +205,7 @@ const SimpleSearchDialog: React.FC<SimpleSearchDialogProps> = ({
           </button>
         </div>
 
-        {/* Footer */}
+        {/* Footer (No changes needed here) */}
         <div className="flex justify-end space-x-3 border-t border-gray-700 px-6 py-4 bg-gray-800">
           <button
             onClick={onClose}
