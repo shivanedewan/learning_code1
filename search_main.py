@@ -50,11 +50,11 @@ logger = logging.getLogger(__name__)
 
 # Elasticsearch configuration
 ES_HOST = "http://localhost:9200/"
-ES_INDEX = "document_index"
+ES_INDEX = "new_index"
 
 
 
-idx_url="http://localhost:9200/document_index"
+idx_url="http://localhost:9200/new_index"
 
 def to_epoch_millis(date_str):
     dt_naive=datetime.strptime(date_str,"%Y-%m-%d")
@@ -201,7 +201,9 @@ async def search_elasticsearch(
     search_after: Optional[List] = None,
     filters: Optional[Dict[str, List[str]]] = None,
     date_range: Optional[Dict[str, str]] = None,
-    parents_only: bool =False
+    parents_only: bool =False,
+    from_offset: Optional[int] = None  # ★ 1. Add the new 'from_offset' parameter
+    
 ) -> Tuple[List[dict], Optional[List]]:
     """
     Performs a search against Elasticsearch with pagination using search_after.
@@ -313,7 +315,9 @@ async def search_elasticsearch(
 
     print(search_body)
 
-    if search_after:
+    if from_offset is not None and from_offset>=0:
+        search_body["from"]=from_offset
+    elif search_after:
         search_body["search_after"] = search_after
 
 # add agrregation for doc
@@ -497,6 +501,8 @@ async def stream_or_paginate_search(
     stream = payload.get("stream", False)       # Optional, default False
     parents_only = bool(payload.get("parents_only",False))
 
+    from_offset = payload.get("from")  # ** new**
+
 
 
     # *** NEW ***: Add a validation check to prevent completely empty searches.
@@ -546,7 +552,7 @@ async def stream_or_paginate_search(
         # Paginated mode
         print("abcd")
         hits, last_sort_value,doctype_counts,branchtype_counts,extensiontype_counts,hits_total = await search_elasticsearch(
-            queries, size, search_type, search_after, filters, date_range, parents_only
+            queries, size, search_type, search_after, filters, date_range, parents_only, from_offset
         )
 
         documents = [hit["_source"] for hit in hits]

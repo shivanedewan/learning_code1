@@ -10,6 +10,7 @@ import Header from "../components/Header";
 import GridView2 from "../components/GridView2";
 
 import GridView1 from "../components/GridView1";
+import GridView from "../components/GridView";
 
 // --- Configuration ---
 import { FaList, FaTh } from 'react-icons/fa';
@@ -44,9 +45,17 @@ const DocumentList = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchAfter, setSearchAfter] = useState<any[] | null>(null); // For pagination
+  
+  
+
+  // for grid view changes
   const [currentViewTitle, setCurrentViewTitle] = useState<string | null>(null);
   const [view, setView] = useState('reader'); // Add this line
-  const [gridPageSize, setGridPageSize] = useState(100);
+  const [gridPageSize, setGridPageSize] = useState(10);
+  const [totalDocuments, setTotalDocuments] = useState(0);
+  
+  // ★ NEW: State for server-side pagination
+  const [currentPage, setCurrentPage] = useState(1);
 
 
   // ★ NEW: parent-docs-only toggle
@@ -63,7 +72,7 @@ const DocumentList = () => {
   const [selectedDocTypeValues, setSelectedDocTypeValues] = useState<Set<string>>(new Set());
   const [selectedBranchTypeValues, setSelectedBranchTypeValues] = useState<Set<string>>(new Set());
   const [selectedExtensionTypeValues, setSelectedExtensionTypeValues] = useState<Set<string>>(new Set());
-     // *** NEW ***: State for DocType Counts received from backend
+     // State for DocType Counts received from backend
   const [docTypeCounts, setDocTypeCounts] = useState<{ [key: string]: number } | null>(null);
   const [branchTypeCounts, setBranchTypeCounts] = useState<{ [key: string]: number } | null>(null);
    
@@ -149,14 +158,6 @@ const DocumentList = () => {
     updateUrlWithQuery(headerSearchQuery);
   };
 
-  // // *** NEW: Handler for the Simple Search submission ***
-  // const handleSimpleSearchSubmit = (filters: Record<string, string>) => {
-  //   // When a simple search is applied, we clear the main query bar
-  //   // and push an empty query to the URL, letting the filters drive the search.
-  //   setHeaderSearchQuery('');
-  //   setSimpleSearchFilters(filters);
-  //   router.push(`/SearchTest`); // Navigate to a clean URL, useEffect will pick up the filter change
-  // };
 
 
     // *** MODIFIED: This handler now updates both the query URL and the filter state ***
@@ -173,14 +174,16 @@ const DocumentList = () => {
 
 
 
-  //data adaptation helper function
-  const adaptDocs=(docs: Document[]): Document[]=>{
-      if (!Array.isArray(docs)){
-        console.error("adaptdocs functione error", docs);
-        return [];  // empty array if input not valid
-      }
+// --- Modify the adaptDocs function to handle the new backend response ---
+// We assume the backend response will now look like:
+// { documents: [...], total: 15000, aggregations: {...} }
+const adaptDocs = (data: BackendResponse): Document[] => {
+    if (!data || !Array.isArray(data.documents)) {
+        console.error("adaptDocs function error: invalid data structure", data);
+        return [];
+    }
 
-      return docs.map((Doc)=>{
+      return data.documents.map((Doc)=>{
 
         const bool=Doc.IsAttachment===true|| String(Doc.IsAttachment).toLowerCase()==="true"
         return{
@@ -205,7 +208,7 @@ const DocumentList = () => {
 
   const fetchDocuments = useCallback(async (isLoadMore = false,attachmentQuery?: {ProphecyId: string,ParentProphecyId: string, isAttachment: boolean}) => {
     // *** MODIFIED: Check if there are any search criteria ***
-    if (parsedApiQueries.length === 0 && Object.keys(simpleSearchFilters).length === 0) {
+    if (!attachmentQuery && parsedApiQueries.length === 0 && Object.keys(simpleSearchFilters).length === 0) {
       // No regular query and no simple filters, so don't fetch.
       // You might want to clear documents or show a message.
       setDocuments([]);
@@ -271,6 +274,9 @@ const DocumentList = () => {
     if (tempRange.lte) activeDateRange.to = tempRange.lte;
 
 
+        // ★ NEW: Calculate 'from' for server-side pagination in grid view
+    const fromOffset = view === 'grid' ? (currentPage - 1) * gridPageSize : 0;
+
     // --- Define Payload Type Explicitly ---
     type PayloadToSend = {
       queries: string[];
@@ -281,19 +287,22 @@ const DocumentList = () => {
       search_after?: any[] | null; // Optional (null is valid for backend)
       stream: boolean;
       parents_only?: boolean; // New optional field
+      from?: number; // ★ ADD 'from' as an optional field for grid view pagination
     };
 
     // --- Construct the Payload Object ---
     // Include properties conditionally to avoid undefined where possible
     const payload: PayloadToSend = {
       queries: parsedApiQueries,
-      size: view === 'grid' ? 10000 : PAGE_SIZE,
+      size: view === 'grid' ? gridPageSize : PAGE_SIZE,
       search_type: searchType,
       stream: false, // Explicitly false
       ...(Object.keys(activeFilters).length > 0 && { filters: activeFilters }), // Add filters only if they exist
       ...(Object.keys(activeDateRange).length > 0 && { date_range: activeDateRange }), // Add date_range only if it exists
       ...(currentSearchAfter !== null && { search_after: currentSearchAfter }), // Add search_after only if not null
       ...(parentsOnly ? { parents_only: true } : {}), // Include only if true
+      
+      ...(view === 'grid' && { from: fromOffset }) //* new conditionally add 'from' when view is grid
     };
     if(attachmentQuery){
       endpoint='/handle-attachment-link'
@@ -332,12 +341,24 @@ const DocumentList = () => {
       
       if (data && Array.isArray(data.documents)){
         
-        const adaptedDocuments=adaptDocs(data.documents)
-        // setDocuments((prevDocs) =>
-        //   isLoadMore ? [...prevDocs, ...adaptedDocuments] : adaptedDocuments
-        // );
+        // ★ FIX: Call adaptDocs with the whole data object
+        const adaptedDocuments=adaptDocs(data)
+        
 
-        setDocuments(isLoadMore && !attachmentQuery ? [...documents,...adaptedDocuments]: adaptedDocuments )
+
+        // ★ FIX: Don't append documents for grid view, just replace them
+            if (view === 'grid') {
+                setDocuments(adaptedDocuments);
+            } else {
+                setDocuments(isLoadMore && !attachmentQuery ? [...documents, ...adaptedDocuments] : adaptedDocuments);
+            }
+
+        // ★ NEW: Set total documents from the backend response
+            // Your backend must return a 'total' field in its JSON response.
+            if (view === 'grid') {
+                setTotalDocuments(data.total || 0);
+            }
+        
 
         setSearchAfter(attachmentQuery? null : (data.next_search_after || null));
 
@@ -382,7 +403,8 @@ const DocumentList = () => {
       setLoading(false);
     }
   }, [
-      // *** MODIFIED: Added simpleSearchFilters to dependencies ***
+      // *** MODIFIED: Added simpleSearchFilters to dependencies and current page ***
+      currentPage,
       parsedApiQueries, searchAfter, yearFilter, selectedDocTypeValues, 
       selectedBranchTypeValues, selectedExtensionTypeValues, searchType, 
       fromDate, toDate, documents, adaptDocs, view, gridPageSize, parentsOnly,
@@ -421,46 +443,75 @@ const DocumentList = () => {
 
   // --- Effects ---
   // Effect for initial load and changes in search query or filters
-  useEffect(() => {
+// HOOK 1: Handles NEW SEARCHES and FILTER CHANGES (for BOTH Reader and Grid view)
+useEffect(() => {
+    // Don't run this logic if we are in a special attachment view
+    if (docIdFromUrl) return;
 
-    if (docIdFromUrl) return; // Don't run if we are in attachment/parent view
+    const hasSearchCriteria = parsedApiQueries.length > 0 || Object.keys(simpleSearchFilters).length > 0;
 
-    // *** MODIFIED: Logic to decide when to fetch ***
-    // Fetch if we have URL query, or if we have simple filters.
-    if (parsedApiQueries.length > 0 || Object.keys(simpleSearchFilters).length > 0) {
-      setDocuments([]);
-      setSearchAfter(null);
-      fetchDocuments(false); // false indicates it's not a "Load More" action
+    if (hasSearchCriteria) {
+        // A new search or filter is being applied. Reset everything.
+        setDocuments([]);
+        setSearchAfter(null); // Crucial for reader view "Load More"
+
+        // For grid view, a new search must always start at page 1
+        if (view === 'grid' && currentPage !== 1) {
+            // Setting the page to 1 will trigger Hook #2, which handles the fetch.
+            setCurrentPage(1); 
+        } else {
+            // If we are in reader view, or already on page 1 of grid view, fetch directly.
+            fetchDocuments(false);
+        }
+    } else {
+        // This block handles cases where the search query is cleared or invalid
+        setDocuments([]);
+        setSearchAfter(null);
+        setError(rawQueryFromUrl ? "Invalid or empty search query provided." : null);
     }
-    // This case handles when a query like "[]" is in the URL, but there are no simple filters.
-    else if (rawQueryFromUrl && parsedApiQueries.length === 0) {
-      setDocuments([]);
-      setSearchAfter(null);
-      setError("Invalid or empty search query provided.");
+}, [
+    // This hook triggers a NEW search. It should NOT run for pagination changes.
+    parsedApiQueries, 
+    rawQueryFromUrl,
+    yearFilter,
+    selectedDocTypeValues,
+    selectedBranchTypeValues,
+    selectedExtensionTypeValues,
+    searchType,
+    fromDate,
+    toDate,
+    parentsOnly,
+    simpleSearchFilters,
+    docIdFromUrl 
+]);
+
+// HOOK 2: Handles PAGINATION CHANGES (for GRID VIEW ONLY)
+useEffect(() => {
+    // This hook should ONLY run when the user changes pages in grid view.
+    const hasSearchCriteria = parsedApiQueries.length > 0 || Object.keys(simpleSearchFilters).length > 0;
+
+    // We add `currentPage > 1` to prevent this from running on the initial load/reset triggered by Hook #1
+    if (view === 'grid' && hasSearchCriteria && currentPage > 1) {
+        fetchDocuments(false);
     }
-    // This case handles a fresh page load with no query in the URL and no simple filters yet.
-    else if (!rawQueryFromUrl) {
-      setDocuments([]);
-      setSearchAfter(null);
-      setError(null);
+}, [
+    // This hook ONLY cares about the grid's current page.
+    currentPage, 
+]);
+
+// HOOK 3: Handles PAGE SIZE and VIEW CHANGES (for GRID VIEW ONLY)
+useEffect(() => {
+    // This hook handles cases where the user switches to grid view or changes the page size,
+    // which should trigger a new fetch from the first page.
+    const hasSearchCriteria = parsedApiQueries.length > 0 || Object.keys(simpleSearchFilters).length > 0;
+    if (view === 'grid' && hasSearchCriteria) {
+        if (currentPage !== 1) {
+            setCurrentPage(1);
+        } else {
+            fetchDocuments(false);
+        }
     }
-  }, [
-      // *** MODIFIED: Added simpleSearchFilters to dependencies ***
-      parsedApiQueries, 
-      yearFilter,
-      rawQueryFromUrl,
-      selectedDocTypeValues,
-      selectedBranchTypeValues,
-      selectedExtensionTypeValues,
-      searchType,
-      fromDate,
-      toDate,
-      docIdFromUrl,
-      gridPageSize,
-      view,
-      parentsOnly,
-      simpleSearchFilters
-  ]);
+}, [gridPageSize, view]); // It runs when the view or page size changes
 
 
   // --- Event Handlers ---
@@ -584,14 +635,17 @@ const handleExtensionTypeChange = useCallback((extensionTypeValue: string) => {
                 currentViewTitle={currentViewTitle} // Pass context title
               />
             ) : (
-              <div className="h-full">
-                <GridView1 
-                  documents={documents} 
-                  pageSize={gridPageSize} 
-                  onPageSizeChange={setGridPageSize} 
-                  isLoading={loading} 
-                />
-              </div>
+              
+                <GridView
+                  documents={documents}
+                  pageSize={gridPageSize}
+                  // ★ PASS DOWN NEW PROPS
+                  currentPage={currentPage}
+                  totalDocuments={totalDocuments}
+                  onPageChange={setCurrentPage} // Pass the state setter
+                  onPageSizeChange={setGridPageSize}
+                  isLoading={loading}
+                  />
             )}
           </div>
         </div>

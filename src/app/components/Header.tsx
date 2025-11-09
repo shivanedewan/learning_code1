@@ -1,3 +1,5 @@
+// import { Link } from "react-router-dom"; // <-- add this import
+import Link from 'next/link';
 import React, { FormEvent, useState } from 'react';
 import { FaSearch, FaUserCircle, FaCog, FaFilter } from 'react-icons/fa';
 import SimpleSearchDialog from './SimpleSearchDialog';
@@ -15,7 +17,12 @@ const Header: React.FC<HeaderProps> = ({ searchQuery, onSearchQueryChange, onSea
 
   return (
     <header className="bg-gray-800 text-white p-4 flex justify-between items-center shadow-md">
-      <div className="text-2xl font-bold">DOCUVISION</div>
+      <Link
+        href="/"
+        className="text-2xl font-bold hover:text-blue-400 transition-colors duration-200"
+      >
+        DOCUVISION
+      </Link>
 
       <div className="flex-1 max-w-xl mx-4">
         <form onSubmit={onSearchSubmit} className="relative">
