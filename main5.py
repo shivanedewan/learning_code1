@@ -19,10 +19,11 @@ from typing import List, Optional
 
 import zipfile
 import httpx
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException,Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse,StreamingResponse
 import logging
+import json
 
 # ... (your existing imports: os, shutil, mimetypes, subprocess, tempfile, Path, etc.)
 # ... (FastAPI imports, Settings, logger, etc.)
@@ -455,3 +456,124 @@ async def download_all(parent_app_id: str = Query(..., description="Parent AppId
     except Exception as e:
         logger.error(f"Error in /download_all for parent_app_id={parent_app_id}: {e}")
         raise HTTPException(status_code=500, detail="Server error during document download")
+
+
+
+
+@app.post("/download_multiple")
+async def download_multiple(prophecy_ids: str = Form(...)):
+    """
+    Accepts a JSON string list of Prophecy IDs, retrieves their system paths from
+    Elasticsearch using httpx, packages the files into a ZIP archive, and streams it.
+    """
+    if not prophecy_ids:
+        raise HTTPException(status_code=400, detail="No Prophecy IDs provided.")
+
+    try:
+        # 1. Parse the incoming list of IDs from the form data
+        list_of_ids = json.loads(prophecy_ids)
+        if not isinstance(list_of_ids, list) or not list_of_ids:
+            raise HTTPException(status_code=400, detail="Invalid format: Prophecy IDs must be a non-empty array.")
+        logger.info(f"Received request to download {len(list_of_ids)} documents.")
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Could not parse Prophecy IDs. Must be a valid JSON array.")
+
+    # 2. Build a single, efficient Elasticsearch query
+    query = {
+        "query": {
+            "terms": {
+                "ProphecyId.keyword": list_of_ids
+            }
+        },
+        "_source": ["SystemPath"], # Also fetch FileName for clarity
+        "size": len(list_of_ids) # Ensure we get all requested documents
+    }
+
+    # 3. Execute the query using httpx
+    hits = []
+    search_url = f"{ES_HOST}/{ES_INDEX}/_search"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(search_url, json=query)
+            # Raise an exception for 4xx or 5xx status codes
+            response.raise_for_status()
+            
+            response_data = response.json()
+            hits = response_data.get('hits', {}).get('hits', [])
+
+    except httpx.HTTPStatusError as e:
+        # Error response from Elasticsearch (e.g., 404 Not Found, 400 Bad Request)
+        logger.error(f"Elasticsearch returned an error: {e.response.status_code} - {e.response.text}")
+        raise HTTPException(status_code=502, detail=f"Error communicating with the search server: {e.response.text}")
+    except httpx.RequestError as e:
+        # Network-related error (e.g., DNS failure, connection refused)
+        logger.error(f"Could not connect to Elasticsearch at {search_url}: {e}")
+        raise HTTPException(status_code=503, detail="The search service is currently unavailable.")
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during Elasticsearch query: {e}")
+        raise HTTPException(status_code=500, detail="An internal error occurred while fetching data.")
+
+    if not hits:
+        raise HTTPException(status_code=404, detail="None of the requested documents were found.")
+
+    # 4. Validate paths and collect a list of valid files to be zipped
+    valid_file_paths: List[Path] = []
+    for hit in hits:
+        source = hit.get('_source', {})
+        system_path_str = source.get('SystemPath')
+
+        if not system_path_str:
+            logger.warning(f"Document with ID {hit['_id']} is missing a SystemPath.")
+            continue
+
+        try:
+            doc_path = Path(system_path_str).resolve()
+
+            # ★★★ SECURITY CHECK: Ensure the resolved path is inside the allowed directory ★★★
+            if not doc_path.is_relative_to(ALLOWED_DOWNLOAD_DIRECTORY):
+                logger.error(f"SECURITY ALERT: Attempt to access a forbidden path: {doc_path}")
+                continue # Silently skip this file
+
+            if doc_path.is_file():
+                valid_file_paths.append(doc_path)
+            else:
+                logger.warning(f"Path for file  does not exist or is not a file: {doc_path}")
+
+        except Exception as e:
+            logger.error(f"Error processing path '{system_path_str}': {e}")
+            continue
+
+    if not valid_file_paths:
+         raise HTTPException(status_code=404, detail="Found document records, but none of the corresponding files could be accessed on the server.")
+
+    # 5. Create a ZIP archive in an in-memory buffer
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for file_path in valid_file_paths:
+            # Use `arcname` to store the file with just its name, not the full server path
+            zip_file.write(file_path, arcname=file_path.name)
+    
+    # Reset the buffer's cursor to the beginning for reading
+    zip_buffer.seek(0)
+
+    # 6. Stream the ZIP file as the final response
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
+    zip_filename = f"documents_{timestamp}.zip"
+
+    logger.info(f"Streaming {len(valid_file_paths)} files in '{zip_filename}'")
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_filename}"'}
+    )
+
+# Optional: A generic exception handler for cleaner error responses
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.error(f"An unhandled exception occurred for request {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected internal server error occurred."},
+    )

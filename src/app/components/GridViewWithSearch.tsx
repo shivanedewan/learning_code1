@@ -1,30 +1,30 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     useReactTable,
     getCoreRowModel,
     getPaginationRowModel,
     getSortedRowModel,
-    getFilteredRowModel,
     flexRender,
     SortingState,
     ColumnDef,
-    RowSelectionState,
 } from '@tanstack/react-table';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Document } from '../types';
 import { Modal } from './OptionalModal2';
 
-import { IoClose, IoEyeOutline, IoDownloadOutline, IoSearchOutline, IoCheckbox, IoSquareOutline, IoCloseCircleOutline } from 'react-icons/io5';
+import { IoClose, IoEyeOutline, IoDownloadOutline } from 'react-icons/io5';
 import { HiOutlineDocumentText } from "react-icons/hi";
 
-// (LoadingSpinner and formatHeader helpers remain the same)
+// A simple loading spinner component
 const LoadingSpinner = () => (
     <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-50">
         <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-sky-500"></div>
     </div>
 );
+
+// Helper to format object keys into readable headers
 const formatHeader = (key: string): string => key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
 
 
@@ -39,39 +39,39 @@ interface GridViewProps {
 }
 
 const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChange, isLoading, currentPage, totalDocuments, onPageChange }) => {
-    // Existing State
+    // State for the currently selected document for the sidebar
     const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
+    // State for table sorting
     const [sorting, setSorting] = useState<SortingState>([]);
 
-    // State for Modal
+    // State for the document viewer modal
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalContent, setModalContent] = useState('');
     const [isModalContentLoading, setIsModalContentLoading] = useState(false);
     const [documentToView, setDocumentToView] = useState<Document | null>(null);
-    
-    // State for Search and Multi-Download
-    const [globalFilter, setGlobalFilter] = useState('');
-    const [multiDownloadMode, setMultiDownloadMode] = useState(false);
-    const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
+    // Environment variable for the backend server URL
     const pythonServerUrl = process.env.NEXT_PUBLIC_PYTHON_SERVER_URL || `http://192.168.10.144:8000`;
 
-    // (Helper functions: getFileExtension, handleOpenDocument, handleDownloadDocument remain the same)
+    // Utility function to get file extension from a file name
     const getFileExtension = (name: string): string | undefined => {
         const lastDot = name.lastIndexOf('.');
-        if (lastDot === -1 || lastDot === 0 || lastDot === name.length - 1) return undefined;
+        if (lastDot === -1 || lastDot === 0 || lastDot === name.length - 1) {
+            return undefined;
+        }
         return name.substring(lastDot + 1).toLowerCase();
     };
 
+    // Handler to open a document, either in a modal or a new tab
     const handleOpenDocument = async (doc: Document) => {
         if (!doc.SystemPath) {
             console.error("No file path provided for viewing.");
             alert("File path is missing, cannot open document.");
             return;
         }
-        
+
         setDocumentToView(doc);
-        const parts = doc.SystemPath? doc.SystemPath.split('/'):[] ;
+        const parts = doc.SystemPath ? doc.SystemPath.split('/') : [];
         const fileName = parts.pop() || "";
         const fileExtension = getFileExtension(fileName);
         const viewUrlBase = `${pythonServerUrl}/api/documents/${encodeURIComponent(doc.SystemPath)}`;
@@ -91,10 +91,11 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                     try {
                         const errorJson = JSON.parse(responseText);
                         errorDetail = errorJson.detail || errorJson.message || responseText;
-                    } catch (e) { /* Not JSON */ }
+                    } catch (e) {
+                        // Response was not JSON
+                    }
                     throw new Error(`Preview generation failed: ${response.status} ${response.statusText}. ${errorDetail}`);
                 }
-                
                 setModalContent(responseText.trim() ? responseText : "<p>Preview is empty or could not be generated.</p>");
             } catch (error) {
                 console.error("Error fetching document content for modal:", error);
@@ -118,6 +119,7 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
         }
     };
 
+    // Handler to download the selected document
     const handleDownloadDocument = (doc: Document) => {
         if (!doc.SystemPath) {
             console.error("No file path provided for downloading.");
@@ -125,7 +127,7 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
             return;
         }
         const downloadUrl = `${pythonServerUrl}/api/documents/${encodeURIComponent(doc.SystemPath)}?action=download`;
-        
+
         try {
             window.open(downloadUrl, '_blank', 'noopener,noreferrer');
         } catch (error) {
@@ -135,70 +137,16 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
         }
     };
 
-    const handleMultiDownload = () => {
-        const selectedRows = table.getSelectedRowModel().flatRows;
-        if (selectedRows.length === 0) {
-            alert("Please select at least one document to download.");
-            return;
-        }
-
-        const prophecyIds = selectedRows.map(row => row.original.ProphecyId);
-
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '/download_multiple';
-        form.target = '_blank';
-
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'prophecy_ids';
-        input.value = JSON.stringify(prophecyIds);
-        form.appendChild(input);
-
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
-
-        setMultiDownloadMode(false);
-        setRowSelection({});
-    };
-
+    // Memoize page count calculation
     const pageCount = useMemo(() => {
         return pageSize > 0 ? Math.ceil(totalDocuments / pageSize) : 0;
     }, [totalDocuments, pageSize]);
 
+    // Memoize column definitions
     const columns = useMemo<ColumnDef<Document>[]>(() => {
-        const baseColumns: ColumnDef<Document>[] = multiDownloadMode ? [
-            {
-                id: 'select',
-                header: ({ table }) => (
-                     <IndeterminateCheckbox
-                        {...{
-                            checked: table.getIsAllPageRowsSelected(),
-                            indeterminate: table.getIsSomePageRowsSelected(),
-                            onChange: table.getToggleAllPageRowsSelectedHandler(),
-                        }}
-                    />
-                ),
-                cell: ({ row }) => (
-                    <div className="px-1 flex justify-center">
-                         <IndeterminateCheckbox
-                            {...{
-                                checked: row.getIsSelected(),
-                                disabled: !row.getCanSelect(),
-                                indeterminate: row.getIsSomeSelected(),
-                                onChange: row.getToggleSelectedHandler(),
-                            }}
-                        />
-                    </div>
-                ),
-            }
-        ] : [];
-        
-        if (documents.length === 0) return baseColumns;
-
-        const dataKeys = Object.keys(documents[0]).filter(key => key !== 'Text' && key !== 'highlighted_text');
-        const dataColumns: ColumnDef<Document>[] = dataKeys.map(key => ({
+        if (documents.length === 0) return [];
+        const validKeys = Object.keys(documents[0]).filter(key => key !== 'Text' && key !== 'highlighted_text');
+        return validKeys.map(key => ({
             accessorKey: key,
             header: () => <span>{formatHeader(key)}</span>,
             cell: info => {
@@ -208,24 +156,21 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                 return value === null || typeof value === 'undefined' ? 'N/A' : String(value);
             },
         }));
+    }, [documents]);
 
-        return [...baseColumns, ...dataColumns];
-    }, [documents, multiDownloadMode]);
-
+    // React Table instance setup
     const table = useReactTable({
         data: documents,
         columns,
-        pageCount,
+        pageCount: pageCount,
         state: {
             sorting,
-            pagination: { pageIndex: currentPage - 1, pageSize },
-            globalFilter,
-            rowSelection,
+            pagination: {
+                pageIndex: currentPage - 1,
+                pageSize,
+            },
         },
         manualPagination: true,
-        enableRowSelection: true,
-        onRowSelectionChange: setRowSelection,
-        onGlobalFilterChange: setGlobalFilter,
         onSortingChange: setSorting,
         onPaginationChange: (updater) => {
             if (typeof updater === 'function') {
@@ -240,15 +185,15 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
         getCoreRowModel: getCoreRowModel(),
         getPaginationRowModel: getPaginationRowModel(),
         getSortedRowModel: getSortedRowModel(),
-        getFilteredRowModel: getFilteredRowModel(),
         autoResetPageIndex: false,
     });
 
+    // Handler for clicking a table row to show the sidebar
     const handleRowClick = (doc: Document) => {
-        if (multiDownloadMode) return;
         setSelectedDoc(prevDoc => (prevDoc === doc ? null : doc));
     };
 
+    // Framer Motion variants for animations
     const gridVariants = { full: { width: '100%' }, shrunk: { width: '65%' } };
     const sidebarVariants = { hidden: { x: '100%', opacity: 0 }, visible: { x: 0, opacity: 1 } };
 
@@ -262,58 +207,6 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                 variants={gridVariants}
                 transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             >
-                <div className="flex items-center justify-between p-2 border-b bg-white flex-shrink-0">
-                    <div className="relative">
-                        <IoSearchOutline className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                        <input
-                            type="text"
-                            value={globalFilter ?? ''}
-                            onChange={e => setGlobalFilter(e.target.value)}
-                            className="pl-9 pr-3 py-1.5 border border-gray-300 rounded-md text-sm w-80 focus:ring-1 focus:ring-sky-500 focus:border-sky-500"
-                            placeholder="Search grid..."
-                        />
-                    </div>
-                    <div>
-                        {!multiDownloadMode ? (
-                            <button
-                                onClick={() => setMultiDownloadMode(true)}
-                                className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium text-white bg-sky-600 rounded-md hover:bg-sky-700 transition-colors"
-                            >
-                                <IoDownloadOutline />
-                                Download Multiple
-                            </button>
-                        ) : (
-                            <AnimatePresence>
-                                <motion.div
-                                    initial={{ opacity: 0, x: 10 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0, x: 10 }}
-                                    className="flex items-center gap-3"
-                                >
-                                    <span className="text-sm font-medium text-gray-700">
-                                        {Object.keys(rowSelection).length} selected
-                                    </span>
-                                    <button
-                                        onClick={handleMultiDownload}
-                                        disabled={Object.keys(rowSelection).length === 0}
-                                        className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                                    >
-                                        <IoDownloadOutline />
-                                        Download Selected
-                                    </button>
-                                    <button
-                                        onClick={() => { setMultiDownloadMode(false); setRowSelection({}); }}
-                                        className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-full"
-                                        aria-label="Cancel multi-download"
-                                    >
-                                        <IoCloseCircleOutline size={22} />
-                                    </button>
-                                </motion.div>
-                            </AnimatePresence>
-                        )}
-                    </div>
-                </div>
-
                 <div className="flex-grow overflow-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-slate-100 sticky top-0 z-10">
@@ -322,7 +215,7 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                                     {headerGroup.headers.map(header => (
                                         <th key={header.id} onClick={header.column.getToggleSortingHandler()} className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer select-none">
                                             {flexRender(header.column.columnDef.header, header.getContext())}
-                                             {header.id !== 'select' && <span className="ml-2">{{ asc: '▲', desc: '▼' }[header.column.getIsSorted() as string] ?? null}</span>}
+                                            <span className="ml-2">{{ asc: '▲', desc: '▼' }[header.column.getIsSorted() as string] ?? null}</span>
                                         </th>
                                     ))}
                                 </tr>
@@ -333,11 +226,7 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                                 <tr
                                     key={row.id}
                                     onClick={() => handleRowClick(row.original)}
-                                    className={`transition-all duration-200 ease-in-out border-l-4 
-                                        ${!multiDownloadMode ? 'cursor-pointer' : ''}
-                                        ${row.getIsSelected() ? 'bg-sky-100 border-sky-600' : 
-                                         (selectedDoc === row.original ? 'bg-sky-50 border-sky-500' : 'border-transparent hover:bg-gray-100')}
-                                    `}
+                                    className={`cursor-pointer transition-all duration-200 ease-in-out border-l-4 ${selectedDoc === row.original ? 'bg-sky-50 border-sky-500' : 'border-transparent hover:bg-gray-100'}`}
                                 >
                                     {row.getVisibleCells().map(cell => (
                                         <td key={cell.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
@@ -374,11 +263,10 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                 </div>
             </motion.div>
 
-            {/* ★ FIXED: Sidebar with restored content */}
             <AnimatePresence>
                 {selectedDoc && (
                     <motion.div
-                         className="absolute top-0 right-0 h-full w-[35%] bg-white border-l-2 border-gray-200 shadow-2xl flex flex-col z-30"
+                        className="absolute top-0 right-0 h-full w-[35%] bg-white border-l-2 border-gray-200 shadow-2xl flex flex-col z-30"
                         initial="hidden" animate="visible" exit="hidden" variants={sidebarVariants} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                     >
                         <div className="flex justify-between items-center p-4 border-b bg-slate-50 flex-shrink-0">
@@ -411,7 +299,7 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                     </motion.div>
                 )}
             </AnimatePresence>
-
+            
             <Modal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
@@ -423,38 +311,5 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
         </div>
     );
 };
-
-function IndeterminateCheckbox({
-    indeterminate,
-    className = '',
-    ...rest
-}: { indeterminate?: boolean } & React.HTMLProps<HTMLInputElement>) {
-    const ref = React.useRef<HTMLInputElement>(null!);
-
-    React.useEffect(() => {
-        if (typeof indeterminate === 'boolean') {
-            ref.current.indeterminate = !rest.checked && indeterminate;
-        }
-    }, [ref, indeterminate, rest.checked]);
-    
-    // Changed the icon logic slightly for better visual feedback
-    const icon = rest.checked ? <IoCheckbox className="text-sky-600" /> : 
-                 indeterminate ? <IoCheckbox className="text-sky-400" /> : 
-                 <IoSquareOutline className="text-gray-400" />;
-
-    return (
-        <label className="flex items-center justify-center cursor-pointer">
-            <input
-                type="checkbox"
-                ref={ref}
-                className="opacity-0 absolute h-0 w-0"
-                {...rest}
-            />
-            <div className="text-xl">
-                 {icon}
-            </div>
-        </label>
-    );
-}
 
 export default GridView;
