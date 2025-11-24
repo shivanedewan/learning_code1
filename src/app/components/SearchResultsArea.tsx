@@ -1,20 +1,18 @@
-// src/components/SearchResultsArea.tsx
-import React from 'react';
-// Import related components and types
+import React, { useState, useCallback } from 'react';
 import DocumentCard from './DocumentCard2';
-import DateFormatter from './DateFormatter'; // Pass down if DocumentCard needs it
-
-import { Document } from '../types'; // Assuming Document type is in ../types.ts
+import { Document } from '../types';
+// ★ IMPORT MODAL HERE
+import { Modal } from './OptionalModal2';
 
 interface SearchResultsAreaProps {
   loading: boolean;
   error: string | null;
   documents: Document[];
-  searchQuery: string[]; // Needed for 'no results' message context
-  searchAfter: any[] | null; // For 'Load More' button
-  fetchDocuments: (isLoadMore: boolean ) => void; // Function to load more
-  handleAttachmentLinkClick: (doc: Document) => void; // Function for attachment link
-  currentViewTitle?: string | null; // Optional title for context (e.g., showing attachments)
+  searchQuery: string[];
+  searchAfter: any[] | null;
+  fetchDocuments: (isLoadMore: boolean ) => void;
+  handleAttachmentLinkClick: (doc: Document) => void;
+  currentViewTitle?: string | null;
 }
 
 const SearchResultsArea: React.FC<SearchResultsAreaProps> = ({
@@ -28,8 +26,88 @@ const SearchResultsArea: React.FC<SearchResultsAreaProps> = ({
   currentViewTitle,
 }) => {
 
+  // ★ NEW: Centralized State for Modal and Navigation
+  const [selectedDocIndex, setSelectedDocIndex] = useState<number | null>(null);
+  const [modalContent, setModalContent] = useState<string>('');
+  const [isModalLoading, setIsModalLoading] = useState<boolean>(false);
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+
+  // Configuration (same as it was in DocumentActions)
+  const pythonServerUrl = process.env.NEXT_PUBLIC_PYTHON_SERVER_URL || `http://localhost:8000`;
+
+  // ★ NEW: Helper to fetch content (Moved logic from DocumentActions to here)
+  const fetchDocContent = useCallback(async (doc: Document) => {
+    const filePath = doc.SystemPath;
+    if (!filePath) return;
+
+    // Helper to check extension (copied from DocumentActions)
+    const getFileExtension = (name: string): string | undefined => {
+        const lastDot = name.lastIndexOf('.');
+        if (lastDot === -1 || lastDot === 0 || lastDot === name.length - 1) return undefined;
+        return name.substring(lastDot + 1).toLowerCase();
+    };
+    
+    const fileName = doc.FileName || "Document";
+    const fileExtension = getFileExtension(fileName);
+    const modalViewExtensions = ['doc', 'docx', 'html'];
+    const viewUrlBase = `${pythonServerUrl}/api/documents/${encodeURIComponent(filePath)}`;
+
+    // If supported extension, load in Modal
+    if (fileExtension && modalViewExtensions.includes(fileExtension)) {
+        setIsModalLoading(true);
+        setModalContent(''); 
+        
+        try {
+            const response = await fetch(`${viewUrlBase}?action=view`);
+            let responseText = await response.text();
+
+            if (!response.ok) {
+                // ... error handling logic ...
+                setModalContent(`<p class="text-red-500">Error loading document.</p>`);
+            } else {
+                setModalContent(responseText || "<p>Preview is empty.</p>");
+            }
+        } catch (error: any) {
+            setModalContent(`<p class="text-red-500">Error: ${error.message}</p>`);
+        } finally {
+            setIsModalLoading(false);
+        }
+    } else {
+        // Fallback for PDF/Images: Open in new tab and close modal
+        window.open(`${viewUrlBase}?action=view`, '_blank');
+        setIsModalOpen(false); // Close modal if we opened it for a non-modal file
+    }
+  }, [pythonServerUrl]);
+
+  // ★ NEW: Handler when "View" is clicked on a Card
+  const handleViewDocument = (index: number) => {
+      setSelectedDocIndex(index);
+      setIsModalOpen(true);
+      fetchDocContent(documents[index]);
+  };
+
+  // ★ NEW: Navigation Logic
+  const handleNext = () => {
+    if (selectedDocIndex !== null && selectedDocIndex < documents.length - 1) {
+        const newIndex = selectedDocIndex + 1;
+        setSelectedDocIndex(newIndex);
+        fetchDocContent(documents[newIndex]);
+    }
+  };
+
+  const handlePrev = () => {
+    if (selectedDocIndex !== null && selectedDocIndex > 0) {
+        const newIndex = selectedDocIndex - 1;
+        setSelectedDocIndex(newIndex);
+        fetchDocContent(documents[newIndex]);
+    }
+  };
+
   const hasResults = Array.isArray(documents) && documents.length > 0;
-  const canLoadMore = !loading && searchAfter && !currentViewTitle; // Show load more only for main search with pagination info
+  const canLoadMore = !loading && searchAfter && !currentViewTitle;
+
+  // Derive current document for Modal props
+  const currentDoc = selectedDocIndex !== null ? documents[selectedDocIndex] : null;
 
   return (
     <div className="w-full">
@@ -56,33 +134,49 @@ const SearchResultsArea: React.FC<SearchResultsAreaProps> = ({
       )}
 
       {/* Document List */}
+      
+
       {!loading && hasResults && (
         <div className="space-y-6">
-          {documents.map((doc) => (
+          {documents.map((doc, index) => (
             <DocumentCard
-              // Pass necessary props to each card
-              key={doc.ProphecyId || `${doc.FileName}-${doc.DocumentDate}`} // Use stable key
+              key={doc.ProphecyId || `${doc.FileName}-${doc.DocumentDate}`}
               doc={doc}
               handleAttachmentLinkClick={handleAttachmentLinkClick}
-              // Pass down components/props if DocumentCard needs them directly
-              // DateFormatter={DateFormatter}
-              // DocumentButton={DocumentButton}
+              // ★ PASS THE VIEW HANDLER with INDEX
+              onView={() => handleViewDocument(index)}
             />
           ))}
         </div>
       )}
 
-      {/* Load More Button */}
       {canLoadMore && (
         <div className="mt-6 text-center">
-          <button
-            onClick={() => fetchDocuments(true)} // Pass true to indicate loading more
-            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
-            disabled={loading} // Disable button while loading
-          >
+          <button onClick={() => fetchDocuments(true)} className="bg-blue-500 text-white p-2 rounded">
             Load More
           </button>
         </div>
+      )}
+
+      {/* ★ RENDER MODAL ONCE HERE */}
+      {currentDoc && (
+          <Modal
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            title={currentDoc.FileName || "Document"}
+            isLoading={isModalLoading}
+            filePath={currentDoc.SystemPath}
+            latestProphecyId={currentDoc.ProphecyId}
+            isAttachment={currentDoc.IsAttachment}
+            
+            // ★ Pass Navigation Props
+            onNext={handleNext}
+            onPrev={handlePrev}
+            hasNext={selectedDocIndex !== null && selectedDocIndex < documents.length - 1}
+            hasPrev={selectedDocIndex !== null && selectedDocIndex > 0}
+          >
+            <div dangerouslySetInnerHTML={{ __html: modalContent }} />
+          </Modal>
       )}
     </div>
   );

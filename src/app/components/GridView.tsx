@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
     useReactTable,
     getCoreRowModel,
@@ -19,7 +19,6 @@ import { Modal } from './OptionalModal2';
 import { IoClose, IoEyeOutline, IoDownloadOutline, IoSearchOutline, IoCheckbox, IoSquareOutline, IoCloseCircleOutline } from 'react-icons/io5';
 import { HiOutlineDocumentText } from "react-icons/hi";
 
-// (LoadingSpinner and formatHeader helpers remain the same)
 const LoadingSpinner = () => (
     <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-50">
         <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-sky-500"></div>
@@ -47,8 +46,10 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalContent, setModalContent] = useState('');
     const [isModalContentLoading, setIsModalContentLoading] = useState(false);
-    const [documentToView, setDocumentToView] = useState<Document | null>(null);
     
+    // ★ NEW: Track the Index of the document being viewed in the Modal
+    const [viewingDocIndex, setViewingDocIndex] = useState<number | null>(null);
+
     // State for Search and Multi-Download
     const [globalFilter, setGlobalFilter] = useState('');
     const [multiDownloadMode, setMultiDownloadMode] = useState(false);
@@ -56,32 +57,32 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
 
     const pythonServerUrl = process.env.NEXT_PUBLIC_PYTHON_SERVER_URL || `http://localhost:8000`;
 
-    // (Helper functions: getFileExtension, handleOpenDocument, handleDownloadDocument remain the same)
+    // Helper
     const getFileExtension = (name: string): string | undefined => {
         const lastDot = name.lastIndexOf('.');
         if (lastDot === -1 || lastDot === 0 || lastDot === name.length - 1) return undefined;
         return name.substring(lastDot + 1).toLowerCase();
     };
 
-    const handleOpenDocument = async (doc: Document) => {
+    // ★ NEW: Centralized Fetch Logic (Refactored from handleOpenDocument)
+    // This allows both the initial click and Next/Prev buttons to use the same logic
+    const fetchDocContent = useCallback(async (doc: Document) => {
         if (!doc.SystemPath) {
-            console.error("No file path provided for viewing.");
-            alert("File path is missing, cannot open document.");
+            console.error("No file path provided.");
             return;
         }
-        
-        setDocumentToView(doc);
-        const parts = doc.SystemPath? doc.SystemPath.split('/'):[] ;
+
+        const parts = doc.SystemPath ? doc.SystemPath.split('/') : [];
         const fileName = parts.pop() || "";
         const fileExtension = getFileExtension(fileName);
         const viewUrlBase = `${pythonServerUrl}/api/documents/${encodeURIComponent(doc.SystemPath)}`;
         const modalViewExtensions = ['doc', 'docx', 'html'];
 
+        // Case 1: Load in Modal
         if (fileExtension && modalViewExtensions.includes(fileExtension)) {
             setIsModalContentLoading(true);
             setModalContent('');
-            setIsModalOpen(true);
-
+            
             try {
                 const response = await fetch(`${viewUrlBase}?action=view`);
                 let responseText = await response.text();
@@ -97,77 +98,87 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                 
                 setModalContent(responseText.trim() ? responseText : "<p>Preview is empty or could not be generated.</p>");
             } catch (error) {
-                console.error("Error fetching document content for modal:", error);
+                console.error("Error fetching document content:", error);
                 const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
                 setModalContent(`<div class="p-4 bg-red-100 border border-red-400 text-red-700 rounded"><p><strong>Error Loading Preview:</strong></p><p>${errorMessage}</p></div>`);
             } finally {
                 setIsModalContentLoading(false);
             }
-        } else {
+        } 
+        // Case 2: Open in New Tab (PDFs, Images, etc)
+        else {
+            // If it's not a modal-supported file, we close the modal logic (or don't open it) and popup window
+            setIsModalOpen(false); 
             const viewUrl = `${viewUrlBase}?action=view`;
             try {
-                const newTab = window.open(viewUrl, '_blank', 'noopener,noreferrer');
-                if (!newTab) {
-                    alert("Failed to open the document. Your browser's pop-up blocker might have prevented it.");
-                }
+                window.open(viewUrl, '_blank', 'noopener,noreferrer');
             } catch (error) {
-                console.error("Error opening document in new tab:", error);
-                const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
-                alert(`Failed to open document: ${errorMessage}`);
+                alert(`Failed to open document.`);
             }
         }
-    };
+    }, [pythonServerUrl]);
 
-    const handleDownloadDocument = (doc: Document) => {
-        if (!doc.SystemPath) {
-            console.error("No file path provided for downloading.");
-            alert("File path is missing, cannot download document.");
-            return;
-        }
-        const downloadUrl = `${pythonServerUrl}/api/documents/${encodeURIComponent(doc.SystemPath)}?action=download`;
+    // ★ CHANGED: Handler to start viewing (sets index and opens modal)
+    const handleViewDocument = (doc: Document) => {
+        // Find the index of the clicked document within the current grid page
+        const index = documents.findIndex(d => d.ProphecyId === doc.ProphecyId || d === doc);
         
-        try {
-            window.open(downloadUrl, '_blank', 'noopener,noreferrer');
-        } catch (error) {
-            console.error("Error initiating download:", error);
-            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
-            alert(`Failed to initiate download: ${errorMessage}`);
+        if (index !== -1) {
+            setViewingDocIndex(index);
+            setIsModalOpen(true);
+            fetchDocContent(doc);
         }
     };
 
-       // ★ CORRECTED Multi-Download Handler ★
+    // ★ NEW: Navigation Logic
+    const handleNext = () => {
+        if (viewingDocIndex !== null && viewingDocIndex < documents.length - 1) {
+            const newIndex = viewingDocIndex + 1;
+            setViewingDocIndex(newIndex);
+            fetchDocContent(documents[newIndex]);
+        }
+    };
+
+    const handlePrev = () => {
+        if (viewingDocIndex !== null && viewingDocIndex > 0) {
+            const newIndex = viewingDocIndex - 1;
+            setViewingDocIndex(newIndex);
+            fetchDocContent(documents[newIndex]);
+        }
+    };
+
+    // Helper for Download (unchanged)
+    const handleDownloadDocument = (doc: Document) => {
+        if (!doc.SystemPath) return;
+        const downloadUrl = `${pythonServerUrl}/api/documents/${encodeURIComponent(doc.SystemPath)}?action=download`;
+        try { window.open(downloadUrl, '_blank', 'noopener,noreferrer'); } catch (e) { alert("Download failed"); }
+    };
+
+    // Helper for Multi-Download (unchanged)
     const handleMultiDownload = () => {
         const selectedRows = table.getSelectedRowModel().flatRows;
         if (selectedRows.length === 0) {
             alert("Please select at least one document to download.");
             return;
         }
-
         const prophecyIds = selectedRows.map(row => row.original.ProphecyId);
-        
-        // Use the absolute URL from your pythonServerUrl variable
         const downloadUrl = `${pythonServerUrl}/download_multiple`;
-
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = downloadUrl; // Use the full URL here
+        form.action = downloadUrl;
         form.target = '_blank';
-
         const input = document.createElement('input');
         input.type = 'hidden';
         input.name = 'prophecy_ids';
         input.value = JSON.stringify(prophecyIds);
         form.appendChild(input);
-
         document.body.appendChild(form);
         form.submit();
         document.body.removeChild(form);
-
         setMultiDownloadMode(false);
         setRowSelection({});
     };
 
-    
     const pageCount = useMemo(() => {
         return pageSize > 0 ? Math.ceil(totalDocuments / pageSize) : 0;
     }, [totalDocuments, pageSize]);
@@ -256,6 +267,9 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
 
     const gridVariants = { full: { width: '100%' }, shrunk: { width: '65%' } };
     const sidebarVariants = { hidden: { x: '100%', opacity: 0 }, visible: { x: 0, opacity: 1 } };
+
+    // ★ NEW: Derive document object for the modal based on index
+    const documentToView = viewingDocIndex !== null ? documents[viewingDocIndex] : null;
 
     return (
         <div className="flex h-full w-full bg-slate-50 overflow-hidden relative">
@@ -355,6 +369,7 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                     </table>
                 </div>
 
+                {/* Pagination Controls */}
                 <div className="flex items-center justify-between p-2 border-t bg-white flex-shrink-0">
                     <div className="flex items-center gap-2">
                         <span className="text-sm text-gray-600">Rows per page:</span>
@@ -379,7 +394,7 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                 </div>
             </motion.div>
 
-            {/* ★ FIXED: Sidebar with restored content */}
+            {/* Sidebar */}
             <AnimatePresence>
                 {selectedDoc && (
                     <motion.div
@@ -392,7 +407,8 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                                 <h3 className="text-lg font-bold text-gray-800">Document Details</h3>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button onClick={() => handleOpenDocument(selectedDoc)} className="text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded-full p-2 transition-colors" aria-label="View document">
+                                {/* ★ CHANGED: Use handleViewDocument here */}
+                                <button onClick={() => handleViewDocument(selectedDoc)} className="text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded-full p-2 transition-colors" aria-label="View document">
                                     <IoEyeOutline size={20} />
                                 </button>
                                 <button onClick={() => handleDownloadDocument(selectedDoc)} className="text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded-full p-2 transition-colors" aria-label="Download document">
@@ -417,14 +433,26 @@ const GridView: React.FC<GridViewProps> = ({ documents, pageSize, onPageSizeChan
                 )}
             </AnimatePresence>
 
-            <Modal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                title={documentToView?.FileName || 'Document'}
-                isLoading={isModalContentLoading}
-            >
-                <div dangerouslySetInnerHTML={{ __html: modalContent }} />
-            </Modal>
+            {/* ★ CHANGED: Updated Modal with Navigation Props */}
+            {documentToView && (
+                <Modal
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                    title={documentToView.FileName || 'Document'}
+                    isLoading={isModalContentLoading}
+                    filePath={documentToView.SystemPath}
+                    latestProphecyId={documentToView.ProphecyId}
+                    isAttachment={documentToView.IsAttachment}
+                    
+                    // Pass Navigation handlers
+                    onNext={handleNext}
+                    onPrev={handlePrev}
+                    hasNext={viewingDocIndex !== null && viewingDocIndex < documents.length - 1}
+                    hasPrev={viewingDocIndex !== null && viewingDocIndex > 0}
+                >
+                    <div dangerouslySetInnerHTML={{ __html: modalContent }} />
+                </Modal>
+            )}
         </div>
     );
 };
@@ -442,7 +470,6 @@ function IndeterminateCheckbox({
         }
     }, [ref, indeterminate, rest.checked]);
     
-    // Changed the icon logic slightly for better visual feedback
     const icon = rest.checked ? <IoCheckbox className="text-sky-600" /> : 
                  indeterminate ? <IoCheckbox className="text-sky-400" /> : 
                  <IoSquareOutline className="text-gray-400" />;

@@ -11,9 +11,10 @@ import DocumentActions from './DocumentActions2';
 interface DocumentCardProps {
   doc: Document;
   handleAttachmentLinkClick: (doc: Document) => void;
+  onView: () => void;
 }
 
-const DocumentCard: React.FC<DocumentCardProps> = ({ doc, handleAttachmentLinkClick }) => {
+const DocumentCard: React.FC<DocumentCardProps> = ({ doc, handleAttachmentLinkClick, onView }) => {
  
   const uniqueKey = doc.ProphecyId || `${doc.FileName}-${doc.DocumentDate}`; // Example fallback
 
@@ -78,7 +79,7 @@ const DocumentCard: React.FC<DocumentCardProps> = ({ doc, handleAttachmentLinkCl
           {/* Pass required props to DocumentButton */}
           {/* Assuming DocumentButton needs 'filePath' which is now 'FileName'? Adjust as needed */}
           {/* {doc.SystemPath && <DocumentButton filePath={doc.SystemPath} fileName={fileName}/>} */}
-          {doc.SystemPath && <DocumentActions filePath={doc.SystemPath} fileName={fileName} isAttachment={isAttachment} latestProphecyId={latestProphecyId}/>}
+          {doc.SystemPath && <DocumentActions filePath={doc.SystemPath} fileName={fileName} onView={onView}/>}
         </div>
       </div>
 

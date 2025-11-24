@@ -1,6 +1,6 @@
-
-
 import React, { useEffect } from "react";
+// ★ NEW ICONS for Navigation
+import { FaChevronLeft, FaChevronRight } from "react-icons/fa";
 
 interface ModalProps {
   isOpen: boolean;
@@ -9,18 +9,19 @@ interface ModalProps {
   children: React.ReactNode;
   isLoading?: boolean;
   viewUrl?: string;
-
-  // Optional callbacks for the download buttons
   onDownload?: () => void;
   onDownloadAll?: () => void;
-
-  // Optional labels
   downloadLabel?: string;
   downloadAllLabel?: string;
-
-  filePath?: string;        // for single-file download
-  latestProphecyId?: string;    // for "download all"
+  filePath?: string;
+  latestProphecyId?: string;
   isAttachment?: boolean;
+
+  // ★ NEW: Navigation Props
+  onNext?: () => void;
+  onPrev?: () => void;
+  hasNext?: boolean;
+  hasPrev?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -36,22 +37,44 @@ export const Modal: React.FC<ModalProps> = ({
   downloadAllLabel = "Download all",
   filePath,
   latestProphecyId,
-  isAttachment
+  isAttachment,
+  // ★ Destructure new props
+  onNext,
+  onPrev,
+  hasNext = false,
+  hasPrev = false,
 }) => {
-  // Close modal on Escape
+
+
   useEffect(() => {
-    const handleEsc = (event: KeyboardEvent) => {
+  if (isOpen) {
+    // Lock background scroll
+    document.body.style.overflow = "hidden";
+  } else {
+    document.body.style.overflow = "";
+  }
+
+  return () => {
+    document.body.style.overflow = "";
+  };
+}, [isOpen]);
+
+  
+  // Close on Escape & Handle Left/Right Arrow keys
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      // ★ NEW: Keyboard navigation
+      if (event.key === "ArrowRight" && hasNext && onNext) onNext();
+      if (event.key === "ArrowLeft" && hasPrev && onPrev) onPrev();
     };
-    if (isOpen) window.addEventListener("keydown", handleEsc);
-    return () => window.removeEventListener("keydown", handleEsc);
-  }, [isOpen, onClose]);
+    if (isOpen) window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose, hasNext, hasPrev, onNext, onPrev]);
 
   if (!isOpen) return null;
 
   const disabled = !!isLoading;
-
-  // Base server URL from environment variable
   const baseServer = process.env.NEXT_PUBLIC_PYTHON_SERVER_URL || "http://192.168.10.144:8000";
 
   return (
@@ -59,23 +82,54 @@ export const Modal: React.FC<ModalProps> = ({
       className="fixed inset-0 bg-black bg-opacity-60 z-40 flex justify-center items-center p-4 transition-opacity duration-300 ease-in-out"
       onClick={onClose}
     >
+      {/* 
+         ★ LEFT FLOATING BUTTON (Previous) 
+         - Absolute positioned to left of screen
+         - Centered vertically
+         - Visible on Medium screens and up (md:block)
+      */}
+      {hasPrev && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onPrev && onPrev(); }}
+          className="fixed left-4 top-1/2 transform -translate-y-1/2 z-50 p-3 bg-white/20 hover:bg-white text-white hover:text-blue-600 rounded-full shadow-2xl transition-all duration-200 backdrop-blur-sm hidden md:block"
+          title="Previous Document"
+        >
+          <FaChevronLeft size={30} />
+        </button>
+      )}
+
+      {/* 
+         ★ RIGHT FLOATING BUTTON (Next) 
+         - Absolute positioned to right of screen
+      */}
+      {hasNext && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onNext && onNext(); }}
+          className="fixed right-4 top-1/2 transform -translate-y-1/2 z-50 p-3 bg-white/20 hover:bg-white text-white hover:text-blue-600 rounded-full shadow-2xl transition-all duration-200 backdrop-blur-sm hidden md:block"
+          title="Next Document"
+        >
+          <FaChevronRight size={30} />
+        </button>
+      )}
+
       <div
         className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col z-50"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
       >
-        {/* Header with title and right-side buttons */}
+        {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-gray-200">
-          <h2
-            id="modal-title"
-            className="text-xl font-semibold text-gray-800 break-all truncate"
-            title={title}
-          >
-            {title}
-          </h2>
+          
+          <div className="flex items-center space-x-4 overflow-hidden">
+            <h2 className="text-xl font-semibold text-gray-800 break-all truncate max-w-md" title={title}>
+              {title}
+            </h2>
+            
+            {/* ★ REMOVED: The small buttons from the header are gone now. */}
+          </div>
 
+          
           <div className="flex items-center space-x-2">
             <div className="flex items-center space-x-2 mr-2">
               {/* Single-file download */}
@@ -176,6 +230,9 @@ export const Modal: React.FC<ModalProps> = ({
               ×
             </button>
           </div>
+
+
+        
         </div>
 
         {/* Content */}
@@ -193,20 +250,28 @@ export const Modal: React.FC<ModalProps> = ({
 
         {/* Footer */}
         <div className="flex items-center justify-between p-4 border-t border-gray-200 rounded-b">
-          {viewUrl ? (
-            <a
-              href={viewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-blue-600 hover:underline sm:hidden"
-            >
-              Open document in new page
-            </a>
-          ) : <div />}
+           {/* ★ NEW: Navigation Buttons in Footer (for mobile convenience) */}
+           <div className="flex space-x-2">
+              <button 
+                onClick={onPrev} 
+                disabled={!hasPrev || isLoading}
+                className={`px-3 py-1 rounded text-sm ${!hasPrev ? 'text-gray-300' : 'text-blue-600 hover:bg-blue-50'}`}
+              >
+                Previous
+              </button>
+              <button 
+                onClick={onNext} 
+                disabled={!hasNext || isLoading}
+                className={`px-3 py-1 rounded text-sm ${!hasNext ? 'text-gray-300' : 'text-blue-600 hover:bg-blue-50'}`}
+              >
+                Next
+              </button>
+           </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-75"
+            className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600"
           >
             Close
           </button>
