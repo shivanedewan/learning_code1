@@ -14,6 +14,9 @@ export const useFilterState = (initialSearchType: "any" | "all" | null) => {
   const [simpleSearchFilters, setSimpleSearchFilters] = useState<Record<string, string>>({});
 
 
+    // ✅ NEW
+  const [enableFuzzy, setEnableFuzzy] = useState(false);
+
     // ★ NEW: Sync state when URL parameter changes
   useEffect(() => {
     if (initialSearchType) {
@@ -41,6 +44,9 @@ export const useFilterState = (initialSearchType: "any" | "all" | null) => {
     setSelectedExtensionTypeValues(new Set());
     setParentsOnly(false);
     setSimpleSearchFilters({});
+
+      // ✅ NEW: Reset fuzzy when clearing filters
+    setEnableFuzzy(false);
   }, []);
 
   return {
@@ -53,6 +59,7 @@ export const useFilterState = (initialSearchType: "any" | "all" | null) => {
     selectedExtensionTypeValues, handleExtensionTypeChange: createSetToggler(setSelectedExtensionTypeValues),
     parentsOnly, setParentsOnly,
     simpleSearchFilters, setSimpleSearchFilters,
+    enableFuzzy, setEnableFuzzy,
     clearAllFilters
   };
 };

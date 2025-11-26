@@ -102,6 +102,9 @@ export const useDocumentApi = () => {
       size: viewState.view === 'grid' ? viewState.gridPageSize : PAGE_SIZE,
       search_type: filtersState.searchType,
       stream: false,
+
+        // ✅ NEW: Send fuzzy flag to backend
+      enable_fuzzy: filtersState.enableFuzzy,
       ...(Object.keys(activeFilters).length > 0 && { filters: activeFilters }),
       ...(Object.keys(activeDateRange).length > 0 && { date_range: activeDateRange }),
       ...(currentSearchAfter !== null && { search_after: currentSearchAfter }),

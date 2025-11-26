@@ -18,6 +18,7 @@ import { Document } from '../types';
 import { useUrlParams } from "../hooks/useUrlParams";
 import { useFilterState } from "../hooks/useFilterState";
 import { useDocumentApi } from "../hooks/useDocumentApi";
+import { FILE } from "dns";
 
 const DocumentList = () => {
   // 1. Initialize Custom Hooks
@@ -135,7 +136,9 @@ const DocumentList = () => {
     urlState.parsedApiQueries, filterState.yearFilter, filterState.selectedDocTypeValues, 
     filterState.selectedBranchTypeValues, filterState.selectedExtensionTypeValues, 
     filterState.searchType, filterState.fromDate, filterState.toDate, 
-    filterState.parentsOnly, filterState.simpleSearchFilters, urlState.docIdFromUrl
+    filterState.parentsOnly, filterState.simpleSearchFilters, urlState.docIdFromUrl,
+      // ✅ NEW: Re-fetch when fuzzy search changes
+    filterState.enableFuzzy,
   ]);
 
   // Effect C: Grid Pagination Changes
@@ -201,6 +204,9 @@ const DocumentList = () => {
             
             parentsOnly={filterState.parentsOnly}
             onToggleParentsOnly={filterState.setParentsOnly}
+
+            enableFuzzy={filterState.enableFuzzy}
+            onToggleFuzzy={filterState.setEnableFuzzy}
             
             DOCTYPES_MAP={DOCTYPES_MAP}
             BRANCHES_MAP={BRANCHES_MAP}

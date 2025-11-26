@@ -38,6 +38,11 @@ interface FiltersSidebarProps {
   parentsOnly: boolean;
   onToggleParentsOnly: (v: boolean) => void;
 
+  // ✅ NEW: Fuzzy Search Toggle
+  enableFuzzy: boolean;
+  onToggleFuzzy: (v: boolean) => void;
+
+
 
 
   // Pass constants as props or import them directly if they are in a shared location
@@ -76,6 +81,9 @@ const FiltersSidebar: React.FC<FiltersSidebarProps> = ({
 
   // ★ NEW
   parentsOnly, onToggleParentsOnly,
+
+  // * New for fuzzy
+  enableFuzzy, onToggleFuzzy,
 
   
   // *** NEW *** Destructure isLoading
@@ -482,6 +490,24 @@ const isAnyFilterActive = useMemo(() => {
               </div>
           )}
       </div>
+
+      {/* ✅ NEW: Fuzzy Search Toggle */}
+      <div className="mb-4 mt-4 p-3 bg-blue-50 rounded-md border border-blue-200">
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={enableFuzzy}
+            onChange={(e) => onToggleFuzzy(e.target.checked)}
+            disabled={isLoading || !searchQueries || searchQueries.length === 0}
+          />
+          <span className="font-medium">Enable smart search</span>
+        </label>
+        <p className="text-xs text-gray-600 mt-1">
+          Finds more results even if there are spelling mistakes or missing letters.
+        </p>
+      </div>
+
 
           {/* --- Clear All Filters Button (STICKY BOTTOM) --- */}
       {/* *** NEW *** */}
