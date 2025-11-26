@@ -222,8 +222,27 @@ const DocumentList = () => {
             <button onClick={() => setView('grid')} className={`p-2 ${view === 'grid' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`} title="Grid View"><FaTh /></button>
           </div>
           <div className="flex-grow min-h-0">
-            {view === 'reader' ? (
-              <SearchResultsArea
+
+              {/* ✅ NEW: Smart Search Active Badge */}
+              {filterState.enableFuzzy && (
+                <div className="mb-3">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-blue-50 border border-blue-300 text-blue-700 text-sm shadow-sm">
+                    <span className="font-semibold">Smart Search Active</span>
+                    <span className="text-xs text-blue-600">(spelling tolerance enabled)</span>
+                  {/* ✅ NEW: Cross button to disable fuzzy */}
+                  <button
+                    onClick={() => filterState.setEnableFuzzy(false)}
+                    className="ml-2 w-5 h-5 rounded-full flex items-center justify-center hover:bg-blue-200 text-blue-600 hover:text-red-600 transition"
+                    title="Disable Smart Search"
+                  >
+                    ×
+                  </button>
+                  </div>
+                </div>
+              )}
+              
+              {view === 'reader' ? (
+                <SearchResultsArea
                 loading={apiState.loading}
                 error={apiState.error}
                 documents={apiState.documents}
