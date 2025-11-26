@@ -3,15 +3,15 @@
 
 import React, { useState, FormEvent } from 'react';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation'; // Use next/navigation for App Router
+import { useRouter } from 'next/navigation';
+import DocuVisionLogo from './DocuvisionLogo';
 
 // Define the search type options
 type SearchType = 'all' | 'any';
 
-
 export default function HomePage() {
     const [query, setQuery] = useState<string>('');
-    const [searchType, setSearchType] = useState<SearchType>('all'); // Default to 'all'
+    const [searchType, setSearchType] = useState<SearchType>('all');
     const router = useRouter();
 
     const handleSearch = (event: FormEvent<HTMLFormElement>) => {
@@ -26,14 +26,12 @@ export default function HomePage() {
         let extractedPhrases = Array.from(phraseMatches, match => match[1])
                                      .filter(phrase => phrase.trim() !== "");
 
-            // ⬅ ADDED: if no quoted phrases but user typed something, treat whole query as one phrase
         if (extractedPhrases.length === 0 && query.trim() !== "") {
             extractedPhrases = [query.trim()];
         }
 
         if (extractedPhrases.length === 0) {
              console.log('No valid phrases found in query:', query);
-             // Optionally show an error message to the user
              alert('Please enter search terms enclosed in double quotes, e.g., "term one" "term two".');
              return;
         }
@@ -46,22 +44,25 @@ export default function HomePage() {
     };
 
     return (
-        // --- BEGIN CHANGED SECTION ---
-        <main className="flex min-h-screen flex-col items-center justify-start bg-white p-4 pt-36"> {/* CHANGED: justify-center to justify-start, added pt-20 */}
-            <div className="w-full max-w-2xl flex flex-col items-center">
-                {/* 1. Logo */}
-                <div className="mb-6"> {/* CHANGED: mb-8 to mb-6 */}
-                    <Image
-                        src="/1736320308928_final2.jpg" // Replace with your logo path in /public
-                        alt="Your App Logo"
-                        width={600} 
-                        height={220} 
-                        priority 
-                    />
-                </div>
-                {/* --- END CHANGED SECTION --- */}
+        <main className="relative flex min-h-screen flex-col items-center justify-start p-4 pt-36 bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
+            {/* Subtle mesh gradient background */}
+            {/* Subtle mesh gradient background */}
+            <div className="absolute inset-0 opacity-40" style={{
+                backgroundImage: `radial-gradient(at 15% 25%, rgba(168, 85, 247, 0.2) 0px, transparent 50%),
+                                 radial-gradient(at 85% 75%, rgba(236, 72, 153, 0.2) 0px, transparent 50%),
+                                 radial-gradient(at 50% 50%, rgba(129, 140, 248, 0.15) 0px, transparent 50%)`
+            }}></div>
 
-                {/* 2. Search Form */}
+
+            <div className="relative w-full max-w-2xl flex flex-col items-center z-10">
+                {/* Logo */}
+                <div className="mb-8 flex justify-center"> 
+                    <div style={{ width: '900px', height: '120px' }}>
+                        <DocuVisionLogo />
+                    </div>
+                </div>
+
+                {/* Search Form */}
                 <form onSubmit={handleSearch} className="w-full flex flex-col items-center">
                     {/* Search Input */}
                     <div className="relative w-full max-w-xl mb-6">
@@ -70,17 +71,16 @@ export default function HomePage() {
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder='e.g., "machine learning" "data science trends"'
-                            className="w-full px-5 py-3 border border-gray-200 rounded-full shadow-sm text-gray-900 placeholder-gray-400
- focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:shadow-md transition-shadow"
+                            className="w-full px-6 py-4 bg-white border border-gray-200 rounded-full shadow-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent hover:shadow-md transition-all duration-200"
                             aria-label="Search documents"
                         />
                         <button
                             type="submit"
-                            className="absolute right-4 top-1/2 transform -translate-y-1/2 p-1"
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 p-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full hover:from-blue-600 hover:to-purple-600 transition-all duration-200 shadow-sm hover:shadow-md"
                             aria-label="Submit search"
                         >
                             <svg
-                                className="h-5 w-5 text-gray-400 hover:text-gray-600 transition-colors"
+                                className="h-5 w-5 text-white"
                                 xmlns="http://www.w3.org/2000/svg"
                                 fill="none"
                                 viewBox="0 0 24 24"
@@ -96,12 +96,12 @@ export default function HomePage() {
                         </button>
                     </div>
 
-                    {/* 3. Search Options & Submit Button */}
-                    <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+                    {/* Search Options & Submit Button */}
+                    <div className="bg-white rounded-2xl px-8 py-5 shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
                         {/* Radio Buttons for Search Type */}
                         <fieldset className="flex space-x-6">
                             <legend className="sr-only">Search Type</legend>
-                            <div>
+                            <div className="flex items-center">
                                 <input
                                     type="radio"
                                     id="searchAll"
@@ -109,13 +109,13 @@ export default function HomePage() {
                                     value="all"
                                     checked={searchType === 'all'}
                                     onChange={() => setSearchType('all')}
-                                    className="mr-1.5 accent-blue-600"
+                                    className="mr-2 w-4 h-4 accent-purple-500 cursor-pointer"
                                 />
-                                <label htmlFor="searchAll" className="text-sm text-gray-700 cursor-pointer">
+                                <label htmlFor="searchAll" className="text-sm font-medium text-gray-700 cursor-pointer hover:text-purple-600 transition-colors">
                                     All of these phrases
                                 </label>
                             </div>
-                            <div>
+                            <div className="flex items-center">
                                 <input
                                     type="radio"
                                     id="searchAny"
@@ -123,29 +123,30 @@ export default function HomePage() {
                                     value="any"
                                     checked={searchType === 'any'}
                                     onChange={() => setSearchType('any')}
-                                    className="mr-1.5 accent-blue-600"
+                                    className="mr-2 w-4 h-4 accent-purple-500 cursor-pointer"
                                 />
-                                <label htmlFor="searchAny" className="text-sm text-gray-700 cursor-pointer">
+                                <label htmlFor="searchAny" className="text-sm font-medium text-gray-700 cursor-pointer hover:text-purple-600 transition-colors">
                                     Any of these phrases
                                 </label>
                             </div>
                         </fieldset>
 
                         {/* Submit Button */}
-                        {/* --- BEGIN CHANGED SECTION --- */}
                         <button
                             type="submit"
-                            className="bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm font-medium py-2 px-4 rounded-md border border-gray-200 transition-colors" /* CHANGED: rounded to rounded-md */
+                            className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white text-sm font-semibold py-2.5 px-6 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
                         >
                             Search Documents
                         </button>
-                        {/* --- END CHANGED SECTION --- */}
                     </div>
                 </form>
-                <p className="mt-6 text-xs text-gray-500">
+
+                {/* Helper text */}
+                <p className="mt-6 text-xs text-gray-500 bg-white/60 rounded-full px-4 py-2 backdrop-blur-sm">
                    Enter phrases enclosed in double quotes. e.g., "term one" "another term"
                 </p>
             </div>
         </main>
     );
 }
+
